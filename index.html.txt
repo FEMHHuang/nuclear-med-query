@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>核醫學 AI 專家系統 | 專業醫學諮詢門戶</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+        
+        :root {
+            --medical-blue: #2563eb;
+            --medical-dark: #0f172a;
+            --medical-bg: #f8fafc;
+        }
+
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            background-color: var(--medical-bg); 
+            color: #1e293b;
+        }
+
+        .sidebar { 
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%); 
+        }
+
+        .chat-container { 
+            height: calc(100vh - 160px); 
+            scroll-behavior: smooth;
+        }
+        
+        /* 醫學結構化 Markdown 樣式 */
+        .markdown-content { line-height: 1.8; font-size: 0.95rem; }
+        .markdown-content h2 { 
+            font-size: 1.25rem; font-weight: 700; color: var(--medical-blue); 
+            margin: 1.5rem 0 1rem 0; display: flex; align-items: center; gap: 0.6rem;
+            border-bottom: 2px solid #eff6ff; padding-bottom: 0.5rem;
+        }
+        .markdown-content h2::before {
+            content: ''; width: 4px; height: 1.2rem; background: var(--medical-blue); border-radius: 2px;
+        }
+
+        /* 專業醫學表格優化 */
+        .markdown-content table { 
+            width: 100%; border-collapse: separate; border-spacing: 0; margin: 1.5rem 0; 
+            border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+        }
+        .markdown-content th { 
+            background-color: #f1f5f9; color: #334155; font-weight: 700; 
+            text-align: left; padding: 14px 16px; border-bottom: 2px solid #e2e8f0; 
+            font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .markdown-content td { 
+            padding: 12px 16px; border-bottom: 1px solid #f1f5f9; background: white; 
+            font-size: 0.9rem; color: #475569;
+        }
+        .markdown-content tr:nth-child(even) td { background-color: #fcfdfe; }
+        .markdown-content tr:hover td { background-color: #f1f5f9; color: var(--medical-blue); }
+        .markdown-content tr:last-child td { border-bottom: none; }
+
+        /* NotebookLM 風格引用標籤 */
+        .source-tag { 
+            display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; 
+            font-size: 10px; font-weight: 700; margin-left: 4px; vertical-align: middle;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); text-transform: uppercase;
+        }
+        .source-pdf { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .source-general { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .message-anim { animation: fadeIn 0.4s ease-out forwards; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        #apiModal { background: rgba(15, 23, 42, 0.8); backdrop-blur: 10px; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+
+    <!-- API Key Input Modal -->
+    <div id="apiModal" class="fixed inset-0 z-[100] flex items-center justify-center hidden">
+        <div class="bg-white p-10 rounded-[2rem] shadow-2xl max-w-md w-full mx-4 border border-slate-100">
+            <div class="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-6">
+                <i class="fas fa-shield-alt text-blue-600 text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-slate-800 mb-2">安全存取驗證</h2>
+            <p class="text-sm text-slate-500 mb-8 leading-relaxed">
+                本系統直接對接 Google Gemini API。請輸入您的私人金鑰，此資訊僅會保留在您的瀏覽器緩存中。
+            </p>
+            <input type="password" id="apiKeyInput" placeholder="在此輸入您的 Gemini API Key..." 
+                   class="w-full border-2 border-slate-100 rounded-2xl py-4 px-6 mb-6 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all">
+            <div class="flex flex-col gap-3">
+                <button onclick="saveApiKey()" class="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200">完成設定並啟動</button>
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-center text-xs text-slate-400 hover:text-blue-600 font-medium transition-colors">如何取得 API 金鑰？</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar w-80 text-white flex flex-col shrink-0 shadow-2xl z-20">
+        <div class="p-8 border-b border-slate-700/50">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-900/50">
+                    <i class="fas fa-atom text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight">核醫專家系統</h1>
+                    <p class="text-[10px] text-blue-400 font-bold uppercase tracking-[0.2em] mt-0.5">Clinical Edition</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="p-6 flex-1 overflow-y-auto space-y-10">
+            <section>
+                <h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.3em] mb-5">文獻數據庫</h3>
+                <div class="relative group">
+                    <input type="file" id="pdfUpload" accept="application/pdf" class="absolute inset-0 opacity-0 cursor-pointer z-10">
+                    <div class="border-2 border-dashed border-slate-700 rounded-[1.5rem] p-8 text-center group-hover:border-blue-500 group-hover:bg-blue-500/5 transition-all duration-300">
+                        <i class="fas fa-file-medical text-3xl mb-4 text-slate-600 group-hover:text-blue-400 group-hover:scale-110 transition-all"></i>
+                        <p class="text-sm font-bold text-slate-300">匯入 PDF 報告</p>
+                        <p class="text-[10px] text-slate-500 mt-2">支援掃描件與學術論文</p>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-[11px] font-bold text-slate-500 uppercase tracking-[0.3em]">活動知識源</h3>
+                    <span id="sourceIndicator" class="px-2 py-0.5 bg-slate-800 text-slate-400 text-[9px] rounded font-bold">READY</span>
+                </div>
+                <div id="fileList" class="space-y-3 text-center py-6 border border-slate-800 rounded-2xl">
+                    <i class="fas fa-layer-group text-slate-700 text-xl mb-2"></i>
+                    <p class="text-[10px] text-slate-600">目前尚無外部數據輸入</p>
+                </div>
+            </section>
+        </div>
+
+        <div class="p-6 border-t border-slate-700/50 bg-black/10">
+            <button onclick="resetApiKey()" class="w-full text-[10px] text-slate-500 hover:text-red-400 transition-colors flex items-center justify-center gap-2 uppercase font-black tracking-widest">
+                <i class="fas fa-lock"></i> 管理 API 授權
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col relative bg-white">
+        <header class="h-20 border-b flex items-center justify-between px-10 bg-white/80 backdrop-blur-xl z-10">
+            <div class="flex items-center gap-4">
+                <div class="px-3 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-black uppercase tracking-tighter border border-green-100 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Gemini 2.5 Flash Online
+                </div>
+            </div>
+            <div class="flex items-center gap-8">
+                <button onclick="location.reload()" class="text-xs font-black text-slate-400 hover:text-blue-600 transition-colors flex items-center gap-2 uppercase tracking-widest">
+                    <i class="fas fa-plus-circle"></i> New Session
+                </button>
+                <div class="h-8 w-[1px] bg-slate-100"></div>
+                <div class="flex items-center gap-3">
+                    <div class="text-right">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase">Consultant</p>
+                        <p class="text-xs font-black text-slate-800">Medical AI</p>
+                    </div>
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 border border-slate-200">
+                        <i class="fas fa-user-md"></i>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Chat Area -->
+        <div id="chatBox" class="chat-container overflow-y-auto p-12 space-y-12">
+            <div class="max-w-4xl mx-auto">
+                <div class="bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 rounded-[2.5rem] p-10 text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
+                    <div class="relative z-10">
+                        <h2 class="text-3xl font-bold mb-4 tracking-tight">結構化專家諮詢</h2>
+                        <p class="text-blue-100 text-base leading-relaxed mb-8 opacity-90 max-w-2xl">
+                            本系統已優化 NotebookLM 解析邏輯。上傳文獻後，我將自動生成「摘要先行」的結構化報告，並優先以「專業醫學表格」呈現臨床數據。
+                        </p>
+                        <div class="flex flex-wrap gap-3">
+                            <div class="bg-white/10 backdrop-blur-md border border-white/20 px-5 py-2.5 rounded-2xl text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
+                                <i class="fas fa-check-double text-blue-300"></i> 強制結構化摘要
+                            </div>
+                            <div class="bg-white/10 backdrop-blur-md border border-white/20 px-5 py-2.5 rounded-2xl text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
+                                <i class="fas fa-table text-blue-300"></i> 專業數據表格化
+                            </div>
+                            <div class="bg-white/10 backdrop-blur-md border border-white/20 px-5 py-2.5 rounded-2xl text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
+                                <i class="fas fa-quote-right text-blue-300"></i> 自動來源追蹤
+                            </div>
+                        </div>
+                    </div>
+                    <i class="fas fa-microscope absolute -bottom-10 -right-10 text-white/5 text-[15rem]"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-10 bg-white border-t border-slate-50 shadow-[0_-20px_40px_-20px_rgba(0,0,0,0.05)]">
+            <div class="max-w-4xl mx-auto relative group">
+                <input type="text" id="userInput" 
+                       placeholder="輸入您的核醫學專業問題（例如：請整理該文獻中的示蹤劑攝取參數表）..." 
+                       class="w-full border-2 border-slate-100 rounded-[2rem] py-6 px-10 focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all outline-none text-slate-700 placeholder-slate-400 shadow-sm text-lg">
+                <button id="sendBtn" class="absolute right-4 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] font-bold text-sm shadow-xl shadow-blue-200 hover:bg-blue-700 hover:scale-[1.02] transition-all flex items-center gap-2">
+                    開始分析 <i class="fas fa-bolt-lightning text-xs"></i>
+                </button>
+            </div>
+            <p class="text-center text-[10px] text-slate-400 mt-4 font-medium uppercase tracking-widest">Powered by Gemini 2.5 Pro Intelligence</p>
+        </div>
+    </main>
+
+    <!-- Loader -->
+    <div id="loader" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[110]">
+        <div class="bg-white p-12 rounded-[3rem] shadow-2xl text-center max-w-sm border border-white/20">
+            <div class="relative w-20 h-20 mx-auto mb-8">
+                <div class="absolute inset-0 border-[6px] border-blue-50 rounded-full"></div>
+                <div class="absolute inset-0 border-[6px] border-blue-600 rounded-full border-t-transparent animate-spin"></div>
+                <div class="absolute inset-0 flex items-center justify-center text-blue-600">
+                    <i class="fas fa-brain text-2xl animate-pulse"></i>
+                </div>
+            </div>
+            <p class="font-bold text-slate-800 text-xl mb-3 tracking-tight">深度知識建模中</p>
+            <p class="text-xs text-slate-400 leading-relaxed font-medium">正在解析醫學文獻，並自動構建對比表格與結構化摘要...</p>
+        </div>
+    </div>
+
+    <script>
+        let pdfContext = "";
+        let loadedFileName = "";
+        let currentApiKey = localStorage.getItem('NM_API_KEY') || "";
+
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        window.onload = () => {
+            if (!currentApiKey) {
+                document.getElementById('apiModal').classList.remove('hidden');
+            }
+        };
+
+        function saveApiKey() {
+            const key = document.getElementById('apiKeyInput').value.trim();
+            if (key) {
+                localStorage.setItem('NM_API_KEY', key);
+                currentApiKey = key;
+                document.getElementById('apiModal').classList.add('hidden');
+            }
+        }
+
+        function resetApiKey() {
+            localStorage.removeItem('NM_API_KEY');
+            location.reload();
+        }
+
+        const pdfUpload = document.getElementById('pdfUpload');
+        const fileList = document.getElementById('fileList');
+        const chatBox = document.getElementById('chatBox');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const loader = document.getElementById('loader');
+
+        pdfUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            loadedFileName = file.name;
+            showLoader(true);
+            
+            fileList.innerHTML = `
+                <div class="px-4 py-3 bg-blue-600/10 mx-2 rounded-xl border border-blue-500/20 text-xs font-black text-blue-400 truncate flex items-center gap-2">
+                    <i class="fas fa-file-pdf text-red-500"></i> ${file.name}
+                </div>
+            `;
+
+            const reader = new FileReader();
+            reader.onload = async function() {
+                const typedarray = new Uint8Array(this.result);
+                const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                let fullText = "";
+                for (let i = 1; i <= Math.min(pdf.numPages, 25); i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    fullText += content.items.map(item => item.str).join(' ') + "\n";
+                }
+                pdfContext = fullText;
+                appendMessage('system', `## 文獻分析成功 \n**${file.name}** 已納入主動知識庫。所有回答將優先提取此文件中的參數數據與臨床證據。`);
+                showLoader(false);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        async function askAI() {
+            const query = userInput.value.trim();
+            if (!query || !currentApiKey) return;
+
+            appendMessage('user', query);
+            userInput.value = '';
+            showLoader(true);
+
+            // 強化後的結構化回答指令 (NotebookLM 風格)
+            const systemPrompt = `你是一位資深的核子醫學顧問與數據分析專家。請嚴格遵守以下「NotebookLM 結構化回答」規範：
+
+            1. **核心摘要 (Executive Summary)**：每一則回答必須以「關鍵結論」作為開頭，字數控制在 100 字內。
+            2. **結構化標題**：使用明確的 Markdown 標題 (##) 區分章節。
+            3. **數據表格化 (Tabular Priority)**：
+               - 如果問題涉及數據對比、劑量參數、物理特性、藥物比較，**必須**生成 Markdown 表格。
+               - 表格內容需精確，並包含計量單位。
+            4. **來源追蹤標註 (Citation)**：
+               - 若資訊來自使用者提供的「文獻內容」，請在句末標註 [來源: PDF文獻]。
+               - 若資訊屬於一般醫學共識或臨床常規，請標註 [來源: 臨床常規]。
+            5. **專業語境**：使用台灣醫學界慣用的繁體中文專業術語（例如：示蹤劑、正子斷層造影）。
+            
+            【目前的文獻上下文內容】：
+            ${pdfContext ? pdfContext : "未提供文獻，請基於您的專業知識庫回答問題。"}
+            `;
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${currentApiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: query }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] }
+                    })
+                });
+
+                const data = await response.json();
+                const aiAnswer = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                appendMessage('ai', aiAnswer || "服務器目前過載，請稍後再試。");
+            } catch (error) {
+                appendMessage('system', "API 驗證失敗或網路異常。請檢查 API Key 是否有效。");
+            } finally {
+                showLoader(false);
+            }
+        }
+
+        function appendMessage(role, text) {
+            const div = document.createElement('div');
+            div.className = `flex gap-6 max-w-5xl mx-auto message-anim ${role === 'user' ? 'justify-end' : ''}`;
+            
+            // 處理來源標籤的轉換
+            let formattedText = role === 'system' ? marked.parse(text) : marked.parse(text);
+            formattedText = formattedText.replace(/\[來源: PDF文獻\]/g, '<span class="source-tag source-pdf"><i class="fas fa-file-alt mr-1"></i>PDF SOURCE</span>');
+            formattedText = formattedText.replace(/\[來源: 臨床常規\]/g, '<span class="source-tag source-general"><i class="fas fa-book-medical mr-1"></i>GENERAL</span>');
+
+            const isAI = role === 'ai';
+            
+            div.innerHTML = `
+                ${isAI ? `
+                    <div class="w-12 h-12 rounded-[1rem] bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-100">
+                        <i class="fas fa-robot text-lg"></i>
+                    </div>
+                ` : ''}
+                <div class="${role === 'user' ? 'bg-blue-600 text-white rounded-[2rem] rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-[2rem] rounded-tl-none'} p-10 shadow-sm w-full report-card relative overflow-hidden">
+                    <div class="markdown-content">${formattedText}</div>
+                    ${isAI ? `
+                        <div class="mt-10 pt-8 border-t border-slate-50 flex justify-between items-center">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                <span class="text-[10px] font-black text-slate-300 tracking-[0.3em] uppercase">Clinical Analysis Report</span>
+                            </div>
+                            <button onclick="exportToPDF(this)" class="no-export-hide flex items-center gap-2 text-[11px] font-bold bg-slate-50 text-blue-600 hover:bg-blue-600 hover:text-white px-6 py-3 rounded-2xl transition-all border border-blue-50">
+                                <i class="fas fa-file-export"></i> 匯出 PDF 醫療報告
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+                ${role === 'user' ? `
+                    <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 shrink-0 border-2 border-white shadow-md">
+                        <i class="fas fa-user-md text-xl"></i>
+                    </div>
+                ` : ''}
+            `;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function showLoader(show) { loader.classList.toggle('hidden', !show); }
+
+        window.exportToPDF = async function(btn) {
+            const reportElement = btn.closest('.report-card');
+            const exportBtn = reportElement.querySelector('.no-export-hide');
+            exportBtn.style.visibility = 'hidden';
+            showLoader(true);
+            
+            try {
+                const canvas = await html2canvas(reportElement, { 
+                    scale: 3, 
+                    useCORS: true,
+                    backgroundColor: '#ffffff',
+                    logging: false
+                });
+                const imgData = canvas.toDataURL('image/png');
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                
+                const pdfWidth = pdf.internal.pageSize.getWidth() - 20;
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                
+                // PDF Header
+                pdf.setFillColor(37, 99, 235);
+                pdf.rect(0, 0, 210, 40, 'F');
+                pdf.setTextColor(255, 255, 255);
+                pdf.setFontSize(18);
+                pdf.text("Nuclear Medicine Expert Analysis Report", 15, 20);
+                pdf.setFontSize(8);
+                pdf.text(`GENERATE DATE: ${new Date().toLocaleString()} | AI MODEL: GEMINI 2.5 PRO`, 15, 30);
+
+                pdf.addImage(imgData, 'PNG', 10, 50, pdfWidth, pdfHeight);
+                pdf.save(`NM_Expert_Report_${Date.now()}.pdf`);
+            } catch (err) {
+                console.error("Export failed", err);
+            } finally {
+                exportBtn.style.visibility = 'visible';
+                showLoader(false);
+            }
+        };
+
+        sendBtn.addEventListener('click', askAI);
+        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') askAI(); });
+    </script>
+</body>
+</html>
